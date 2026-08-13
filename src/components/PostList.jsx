@@ -1,17 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import UserHoverCard from "./UserHoverCard";
-import { Heart, MessageCircle, Share2, Trash2, Send } from "lucide-react";
 
-export default function PostList({ currentUser, searchQuery }) {
+// Списък с поддържаните реакции и техните емоджита
+const REACTIONS = [
+    { type: "like", label: "Харесва ми", emoji: "👍", color: "text-blue-500" },
+    { type: "love", label: "Любов", emoji: "❤️", color: "text-rose-500" },
+    { type: "haha", label: "Ха-ха", emoji: "😆", color: "text-amber-500" },
+    { type: "wow", label: "Уау", emoji: "😮", color: "text-amber-500" },
+    { type: "sad", label: "Тъжно", emoji: "😢", color: "text-amber-500" },
+    { type: "angry", label: "Ядосан", emoji: "😡", color: "text-orange-600" },
+];
+
+export default function PostList({ currentUser, searchQuery, refreshTrigger }) {
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [commentInputs, setCommentInputs] = useState({});
-    const [showComments, setShowComments] = useState({});
+    const [activePickerId, setActivePickerId] = useState(null); // Кой пост има отворено меню за реакции
 
     useEffect(() => {
         fetchPosts();
-    }, [searchQuery]);
+    }, [refreshTrigger, searchQuery]);
 
     const fetchPosts = async () => {
         setLoading(true);
@@ -19,112 +26,106 @@ export default function PostList({ currentUser, searchQuery }) {
             let query = supabase
                 .from("posts")
                 .select(`
-          id,
-          content,
-          image_url,
-          created_at,
-          user_id,
-          profiles:user_id (id, username, avatar_url, city, birth_date),
-          likes (user_id),
-          comments (
-            id,
-            content,
-            created_at,
-            user_id,
-            profiles:user_id (id, username, avatar_url)
-          )
+          *,
+          profiles (id, username, full_name, avatar_url),
+          likes (user_id, reaction_type)
         `)
                 .order("created_at", { ascending: false });
 
-            const { data, error } = await query;
-            if (error) throw error;
-
-            let filteredData = data || [];
-
-            // Филтриране по търсене (ако има такова)
-            if (searchQuery && searchQuery.trim() !== "") {
-                const q = searchQuery.toLowerCase();
-                filteredData = filteredData.filter(
-                    (post) =>
-                        post.content?.toLowerCase().includes(q) ||
-                        post.profiles?.username?.toLowerCase().includes(q)
-                );
+            if (searchQuery) {
+                query = query.ilike("content", `%${searchQuery}%`);
             }
 
-            setPosts(filteredData);
+            const { data, error } = await query;
+
+            if (error) {
+                console.error("Грешка при зареждане на публикации:", error);
+            } else {
+                const formattedPosts = (data || []).map((post) => {
+                    const userLike = post.likes?.find(
+                        (like) => like.user_id === currentUser?.id
+                    );
+                    return {
+                        ...post,
+                        likes_count: post.likes ? post.likes.length : 0,
+                        user_reaction: userLike ? userLike.reaction_type || "like" : null,
+                    };
+                });
+                setPosts(formattedPosts);
+            }
         } catch (err) {
-            console.error("Грешка при зареждане на публикациите:", err.message);
+            console.error(err);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleLike = async (postId, currentLikes) => {
-        const hasLiked = currentLikes.some((like) => like.user_id === currentUser.id);
+    // Обработка на реакция без презареждане на скрола
+    const handleSelectReaction = async (postId, currentReaction, selectedType) => {
+        if (!currentUser) return;
 
-        if (hasLiked) {
-            await supabase
-                .from("likes")
-                .delete()
-                .eq("post_id", postId)
-                .eq("user_id", currentUser.id);
-        } else {
-            await supabase
-                .from("likes")
-                .insert({ post_id: postId, user_id: currentUser.id });
-        }
+        setActivePickerId(null); // Затваряме менюто с емоджита
 
-        fetchPosts();
-    };
+        const isRemoving = currentReaction === selectedType;
+        const newReaction = isRemoving ? null : selectedType;
 
-    const handleAddComment = async (postId, e) => {
-        e.preventDefault();
-        const commentText = commentInputs[postId];
-        if (!commentText || !commentText.trim()) return;
+        // 1. Оптимистично обновяване на локалното състояние (без скрол!)
+        setPosts((prevPosts) =>
+            prevPosts.map((post) => {
+                if (post.id === postId) {
+                    let newCount = post.likes_count;
+                    if (!currentReaction && newReaction) newCount += 1;
+                    if (currentReaction && !newReaction) newCount -= 1;
 
+                    return {
+                        ...post,
+                        user_reaction: newReaction,
+                        likes_count: Math.max(0, newCount),
+                    };
+                }
+                return post;
+            })
+        );
+
+        // 2. Изпращане към Supabase
         try {
-            const { error } = await supabase.from("comments").insert({
-                post_id: postId,
-                user_id: currentUser.id,
-                content: commentText.trim(),
-            });
-
-            if (error) throw error;
-
-            setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
-            fetchPosts();
+            if (isRemoving) {
+                // Премахване на реакцията
+                await supabase
+                    .from("likes")
+                    .delete()
+                    .eq("post_id", postId)
+                    .eq("user_id", currentUser.id);
+            } else {
+                // Добавяне или обновяване на реакцията
+                await supabase
+                    .from("likes")
+                    .upsert(
+                        {
+                            post_id: postId,
+                            user_id: currentUser.id,
+                            reaction_type: selectedType,
+                        },
+                        { onConflict: "post_id,user_id" }
+                    );
+            }
         } catch (err) {
-            console.error("Грешка при добавяне на коментар:", err.message);
+            console.error("Грешка при запис на реакция:", err);
+            fetchPosts(); // Резервен вариант при грешка
         }
-    };
-
-    const handleDeletePost = async (postId) => {
-        if (!window.confirm("Сигурни ли сте, че искате да изтриете тази публикация?")) return;
-
-        try {
-            const { error } = await supabase.from("posts").delete().eq("id", postId);
-            if (error) throw error;
-            setPosts((prev) => prev.filter((p) => p.id !== postId));
-        } catch (err) {
-            console.error("Грешка при изтриване:", err.message);
-        }
-    };
-
-    const toggleComments = (postId) => {
-        setShowComments((prev) => ({ ...prev, [postId]: !prev[postId] }));
     };
 
     if (loading) {
         return (
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs text-center text-xs text-gray-400">
-                Зареждане на публикациите...
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center text-xs text-gray-400">
+                Зареждане на публикации...
             </div>
         );
     }
 
     if (posts.length === 0) {
         return (
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs text-center text-xs text-gray-500">
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center text-xs text-gray-400">
                 Няма намерени публикации.
             </div>
         );
@@ -133,172 +134,112 @@ export default function PostList({ currentUser, searchQuery }) {
     return (
         <div className="space-y-4">
             {posts.map((post) => {
-                const isOwner = post.user_id === currentUser.id;
-                const hasLiked = post.likes?.some((l) => l.user_id === currentUser.id);
-                const likesCount = post.likes?.length || 0;
-                const commentsCount = post.comments?.length || 0;
+                const author = post.profiles || {};
+                const activeReactionObj = REACTIONS.find(
+                    (r) => r.type === post.user_reaction
+                );
 
                 return (
                     <div
                         key={post.id}
-                        className="bg-white rounded-2xl border border-gray-100 shadow-xs p-4 space-y-3"
+                        className="bg-white rounded-2xl border border-gray-100 p-4 shadow-2xs space-y-3 relative"
                     >
-                        {/* Header на публикацията */}
-                        <div className="flex items-center justify-between">
-
-                            {/* ХОВЪР КАРТИЧКА ВЪРХУ АВАТОРА И ИМЕТО */}
-                            <UserHoverCard userId={post.user_id}>
-                                <div className="flex items-center space-x-3 cursor-pointer group">
-                                    <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs overflow-hidden shrink-0">
-                                        {post.profiles?.avatar_url ? (
-                                            <img
-                                                src={post.profiles.avatar_url}
-                                                alt="Avatar"
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : (
-                                            <span>
-                                                {post.profiles?.username
-                                                    ? post.profiles.username[0].toUpperCase()
-                                                    : "U"}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <h4 className="text-xs font-bold text-gray-900 group-hover:text-blue-600 transition">
-                                            {post.profiles?.username || "Потребител"}
-                                        </h4>
-                                        <p className="text-[10px] text-gray-400">
-                                            {new Date(post.created_at).toLocaleDateString("bg-BG", {
-                                                day: "numeric",
-                                                month: "short",
-                                                hour: "2-digit",
-                                                minute: "2-digit",
-                                            })}
-                                        </p>
-                                    </div>
-                                </div>
-                            </UserHoverCard>
-
-                            {isOwner && (
-                                <button
-                                    onClick={() => handleDeletePost(post.id)}
-                                    className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition cursor-pointer"
-                                    title="Изтрий публикацията"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
-                            )}
+                        {/* Заглавна част на поста */}
+                        <div className="flex items-center space-x-3">
+                            <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 font-bold flex items-center justify-center text-xs shrink-0">
+                                {author.avatar_url ? (
+                                    <img
+                                        src={author.avatar_url}
+                                        alt=""
+                                        className="w-full h-full rounded-full object-cover"
+                                    />
+                                ) : (
+                                    (author.username || author.full_name || "U")[0].toUpperCase()
+                                )}
+                            </div>
+                            <div>
+                                <p className="font-semibold text-xs text-gray-800">
+                                    {author.full_name || author.username || "Анонимен"}
+                                </p>
+                                <p className="text-[10px] text-gray-400">
+                                    {new Date(post.created_at).toLocaleDateString("bg-BG", {
+                                        day: "numeric",
+                                        month: "short",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                    })}
+                                </p>
+                            </div>
                         </div>
 
                         {/* Съдържание */}
-                        {post.content && (
-                            <p className="text-xs text-gray-800 whitespace-pre-line leading-relaxed">
-                                {post.content}
-                            </p>
-                        )}
+                        <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-line">
+                            {post.content}
+                        </p>
 
-                        {/* Снимка (ако има) */}
+                        {/* Изображение към поста (ако има) */}
                         {post.image_url && (
-                            <div className="rounded-xl overflow-hidden border border-gray-100 max-h-96 bg-black/5">
-                                <img
-                                    src={post.image_url}
-                                    alt="Post content"
-                                    className="w-full h-full object-cover"
-                                />
-                            </div>
+                            <img
+                                src={post.image_url}
+                                alt="Post content"
+                                className="rounded-xl w-full max-h-96 object-cover"
+                            />
                         )}
 
-                        {/* Бутони за взаимодействие */}
-                        <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                            <div className="flex items-center space-x-4">
+                        {/* БУТОНИ И ЛЕНТА С РЕАКЦИИ */}
+                        <div className="pt-2 border-t border-gray-50 flex items-center justify-between text-xs relative">
+                            <div className="relative">
+
+                                {/* Лента с емоджита при hover/натискане */}
+                                {activePickerId === post.id && (
+                                    <div
+                                        onMouseLeave={() => setActivePickerId(null)}
+                                        className="absolute bottom-full mb-2 left-0 bg-white shadow-xl border border-gray-100 rounded-full px-3 py-1.5 flex items-center space-x-2 animate-in fade-in slide-in-from-bottom-2 z-10"
+                                    >
+                                        {REACTIONS.map((r) => (
+                                            <button
+                                                key={r.type}
+                                                onClick={() =>
+                                                    handleSelectReaction(post.id, post.user_reaction, r.type)
+                                                }
+                                                className="text-lg hover:scale-125 transition-transform p-1"
+                                                title={r.label}
+                                            >
+                                                {r.emoji}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Основен бутон за реакция */}
                                 <button
-                                    onClick={() => handleLike(post.id, post.likes || [])}
-                                    className={`flex items-center space-x-1.5 transition cursor-pointer ${hasLiked ? "text-red-500 font-bold" : "hover:text-red-500"
+                                    onMouseEnter={() => setActivePickerId(post.id)}
+                                    onClick={() =>
+                                        handleSelectReaction(
+                                            post.id,
+                                            post.user_reaction,
+                                            post.user_reaction || "like"
+                                        )
+                                    }
+                                    className={`flex items-center space-x-1.5 font-medium transition-colors ${activeReactionObj
+                                            ? activeReactionObj.color
+                                            : "text-gray-500 hover:text-gray-700"
                                         }`}
                                 >
-                                    <Heart className={`w-4 h-4 ${hasLiked ? "fill-red-500" : ""}`} />
-                                    <span>{likesCount}</span>
-                                </button>
-
-                                <button
-                                    onClick={() => toggleComments(post.id)}
-                                    className="flex items-center space-x-1.5 hover:text-blue-600 transition cursor-pointer"
-                                >
-                                    <MessageCircle className="w-4 h-4" />
-                                    <span>{commentsCount}</span>
+                                    <span className="text-base">
+                                        {activeReactionObj ? activeReactionObj.emoji : "👍"}
+                                    </span>
+                                    <span>
+                                        {activeReactionObj ? activeReactionObj.label : "Харесва ми"}
+                                    </span>
                                 </button>
                             </div>
 
-                            <button className="hover:text-gray-700 p-1 rounded-lg transition cursor-pointer">
-                                <Share2 className="w-4 h-4" />
-                            </button>
+                            {/* Брой общи реакции */}
+                            <div className="text-[11px] text-gray-400 font-medium">
+                                {post.likes_count > 0 && `${post.likes_count} реакции`}
+                            </div>
                         </div>
-
-                        {/* Коментари Секция */}
-                        {showComments[post.id] && (
-                            <div className="pt-3 border-t border-gray-100 space-y-3">
-                                {/* Списък с коментари */}
-                                <div className="space-y-2 max-h-48 overflow-y-auto">
-                                    {post.comments?.map((comment) => (
-                                        <div key={comment.id} className="flex items-start space-x-2 text-xs">
-                                            {/* Картичка при ховър и за авторите на коментари */}
-                                            <UserHoverCard userId={comment.user_id}>
-                                                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px] overflow-hidden shrink-0 mt-0.5 cursor-pointer">
-                                                    {comment.profiles?.avatar_url ? (
-                                                        <img
-                                                            src={comment.profiles.avatar_url}
-                                                            alt="Avatar"
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    ) : (
-                                                        <span>
-                                                            {comment.profiles?.username
-                                                                ? comment.profiles.username[0].toUpperCase()
-                                                                : "U"}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </UserHoverCard>
-
-                                            <div className="flex-1 bg-gray-50 p-2 rounded-xl border border-gray-100">
-                                                <UserHoverCard userId={comment.user_id}>
-                                                    <span className="font-bold text-gray-900 cursor-pointer hover:underline">
-                                                        {comment.profiles?.username || "Потребител"}
-                                                    </span>
-                                                </UserHoverCard>
-                                                <p className="text-gray-700 mt-0.5">{comment.content}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Форма за нов коментар */}
-                                <form
-                                    onSubmit={(e) => handleAddComment(post.id, e)}
-                                    className="flex items-center gap-2"
-                                >
-                                    <input
-                                        type="text"
-                                        value={commentInputs[post.id] || ""}
-                                        onChange={(e) =>
-                                            setCommentInputs((prev) => ({
-                                                ...prev,
-                                                [post.id]: e.target.value,
-                                            }))
-                                        }
-                                        placeholder="Напиши коментар..."
-                                        className="flex-1 bg-gray-50 text-xs px-3 py-1.5 rounded-full border border-gray-200 focus:bg-white focus:border-blue-600 focus:outline-none transition"
-                                    />
-                                    <button
-                                        type="submit"
-                                        className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition cursor-pointer"
-                                    >
-                                        <Send className="w-3.5 h-3.5" />
-                                    </button>
-                                </form>
-                            </div>
-                        )}
                     </div>
                 );
             })}
