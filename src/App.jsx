@@ -6,6 +6,8 @@ import PostList from "./components/PostList";
 import FollowingList from "./components/FollowingList";
 import SuggestedUsers from "./components/SuggestedUsers";
 import Gallery from "./components/Gallery";
+import Sidebar from "./components/Sidebar";
+import SettingsPage from "./components/SettingsPage";
 import EditProfileModal from "./components/EditProfileModal";
 import NotificationsDropdown from "./components/NotificationsDropdown";
 import ChatModal from "./components/ChatModal";
@@ -16,8 +18,8 @@ import {
   Sparkles,
   Search,
   X,
-  LayoutGrid,
-  Image,
+  Bookmark,
+  Users
 } from "lucide-react";
 
 export default function App() {
@@ -29,6 +31,8 @@ export default function App() {
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [activeChatUser, setActiveChatUser] = useState(null);
   const [selectedPostId, setSelectedPostId] = useState(null);
+
+  // По подразбиране стартираме с 'feed' (Начало) или 'gallery'
   const [activeTab, setActiveTab] = useState("feed");
 
   useEffect(() => {
@@ -120,7 +124,10 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
           {/* Logo */}
-          <div className="flex items-center space-x-2 shrink-0">
+          <div
+            onClick={() => setActiveTab("feed")}
+            className="flex items-center space-x-2 shrink-0 cursor-pointer"
+          >
             <Sparkles className="w-6 h-6 text-[#1d4ed8]" />
             <h1 className="text-xl font-black text-[#1d4ed8] tracking-tight hidden sm:block">
               MySocialNet
@@ -158,9 +165,9 @@ export default function App() {
             />
 
             <div
-              onClick={() => setIsEditProfileOpen(true)}
+              onClick={() => setActiveTab("settings")}
               className="flex items-center space-x-2 cursor-pointer p-1.5 hover:bg-gray-100 rounded-lg transition"
-              title="Редактирай профила"
+              title="Настройки на профила"
             >
               <div className="w-8 h-8 rounded-full bg-[#1d4ed8] text-white flex items-center justify-center font-bold text-xs overflow-hidden border border-gray-200">
                 {profile?.avatar_url ? (
@@ -190,7 +197,7 @@ export default function App() {
 
             <button
               onClick={() => supabase.auth.signOut()}
-              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
               title="Изход"
             >
               <LogOut className="w-4 h-4" />
@@ -203,76 +210,54 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-12 gap-6">
         {/* LEFT SIDEBAR */}
         <aside className="md:col-span-3">
-          <div className="sticky top-20 space-y-4">
-            {/* Navigation Menu */}
-            <nav className="bg-white rounded-2xl p-2 border border-gray-100 shadow-xs space-y-1">
-              <button
-                onClick={() => setActiveTab("feed")}
-                className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${activeTab === "feed"
-                    ? "bg-[#1d4ed8] text-white shadow-xs"
-                    : "text-gray-600 hover:bg-blue-50 hover:text-[#1d4ed8]"
-                  }`}
-              >
-                <LayoutGrid className="w-4 h-4" />
-                <span>Публикации</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("gallery")}
-                className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${activeTab === "gallery"
-                    ? "bg-[#1d4ed8] text-white shadow-xs"
-                    : "text-gray-600 hover:bg-blue-50 hover:text-[#1d4ed8]"
-                  }`}
-              >
-                <Image className="w-4 h-4" />
-                <span>Галерия</span>
-              </button>
-            </nav>
-
-            {/* Profile Card */}
-            <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-xs text-center space-y-3">
-              <div className="w-16 h-16 rounded-full bg-blue-50 text-[#1d4ed8] flex items-center justify-center font-bold text-xl mx-auto overflow-hidden border-2 border-blue-100">
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <span>
-                    {currentUser?.email ? currentUser.email[0].toUpperCase() : "U"}
-                  </span>
-                )}
-              </div>
-              <div>
-                <h3 className="font-bold text-xs text-gray-900">
-                  {profile?.username || currentUser?.email?.split("@")[0]}
-                </h3>
-                {profile?.city && (
-                  <p className="text-[10px] text-gray-400 flex items-center justify-center mt-1">
-                    <MapPin className="w-3 h-3 mr-0.5" />
-                    {profile.city}
-                  </p>
-                )}
-                {profile?.bio && (
-                  <p className="text-[11px] text-gray-500 mt-2 line-clamp-2 italic">
-                    "{profile.bio}"
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => setIsEditProfileOpen(true)}
-                className="w-full py-1.5 bg-blue-50 hover:bg-blue-100 text-[#1d4ed8] rounded-xl text-[11px] font-semibold transition"
-              >
-                Редактирай профила
-              </button>
-            </div>
+          <div className="sticky top-20">
+            <Sidebar
+              currentUser={currentUser}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              onEditProfile={() => setActiveTab("settings")}
+            />
           </div>
         </aside>
 
         {/* CENTER COLUMN */}
         <section className="md:col-span-5 lg:col-span-6 space-y-4">
-          {activeTab === "feed" ? (
+          {activeTab === "gallery" && (
+            <Gallery
+              currentUser={currentUser}
+              onSelectPost={(postId) => setSelectedPostId(postId)}
+            />
+          )}
+
+          {activeTab === "settings" && (
+            <SettingsPage
+              currentUser={currentUser}
+              onProfileUpdated={fetchProfile}
+            />
+          )}
+
+          {activeTab === "friends" && (
+            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs">
+              <h2 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Users className="w-5 h-5 text-blue-600" /> Моите Приятели
+              </h2>
+              <FollowingList
+                currentUser={currentUser}
+                refreshTrigger={refreshFollows}
+                onOpenChat={(user) => setActiveChatUser(user)}
+              />
+            </div>
+          )}
+
+          {activeTab === "saved" && (
+            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs text-center text-gray-500 text-xs">
+              <Bookmark className="w-8 h-8 text-blue-500 mx-auto mb-2 opacity-50" />
+              <p className="font-semibold text-gray-700">Запазени публикации</p>
+              <p className="mt-1">Нямате запазени публикации все още.</p>
+            </div>
+          )}
+
+          {activeTab === "feed" && (
             <>
               <CreatePost
                 currentUser={currentUser}
@@ -284,11 +269,6 @@ export default function App() {
                 key={refreshPosts}
               />
             </>
-          ) : (
-            <Gallery
-              currentUser={currentUser}
-              onSelectPost={(postId) => setSelectedPostId(postId)}
-            />
           )}
         </section>
 
