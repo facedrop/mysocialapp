@@ -1,177 +1,213 @@
-import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { LogIn, UserPlus, Mail, Lock, User, AlertCircle, CheckCircle2 } from 'lucide-react';
+import React, { useState } from "react";
+import { supabase } from "../lib/supabase";
+import { Sparkles, Mail, Lock, User, ArrowRight, CheckCircle2, AlertCircle } from "lucide-react";
 
-export default function Auth({ onAuthSuccess }) {
+export default function Auth() {
     const [isSignUp, setIsSignUp] = useState(false);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [username, setUsername] = useState('');
-
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [message, setMessage] = useState(null);
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [username, setUsername] = useState("");
+    const [errorMessage, setErrorMessage] = useState("");
+    const [successMessage, setSuccessMessage] = useState("");
 
-    const handleSubmit = async (e) => {
+    const handleAuth = async (e) => {
         e.preventDefault();
         setLoading(true);
-        setError(null);
-        setMessage(null);
+        setErrorMessage("");
+        setSuccessMessage("");
 
         try {
             if (isSignUp) {
-                // РЕГИСТРАЦИЯ
-                const { data, error: signUpError } = await supabase.auth.signUp({
-                    email,
-                    password,
-                    options: {
-                        data: {
-                            username: username || email.split('@')[0],
-                        },
-                    },
-                });
-
-                if (signUpError) throw signUpError;
-
-                setMessage('Регистрацията е успешна! Влез с новия си акаунт.');
-                setIsSignUp(false);
-                setPassword('');
-            } else {
-                // ВХОД
-                const { data, error: signInError } = await supabase.auth.signInWithPassword({
+                // 1. Регистрация
+                const { data, error } = await supabase.auth.signUp({
                     email,
                     password,
                 });
 
-                if (signInError) throw signInError;
+                if (error) throw error;
 
-                if (onAuthSuccess) {
-                    onAuthSuccess(data.user);
+                // 2. Създаване на профил при успешна регистрация
+                if (data?.user) {
+                    const { error: profileError } = await supabase.from("profiles").upsert({
+                        id: data.user.id,
+                        username: username.trim() || email.split("@")[0],
+                        created_at: new Date(),
+                    });
+
+                    if (profileError) console.error("Грешка при създаване на профила:", profileError.message);
                 }
+
+                setSuccessMessage("Успешна регистрация! Вече можете да влезете.");
+                setIsSignUp(false);
+            } else {
+                // Вход
+                const { error } = await supabase.auth.signInWithPassword({
+                    email,
+                    password,
+                });
+
+                if (error) throw error;
             }
         } catch (err) {
-            setError(err.message || 'Възникна грешка при аутентикацията.');
+            setErrorMessage(err.message || "Възникна грешка при автентикацията.");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-            <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-200 p-8 space-y-6">
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+            <div className="max-w-4xl w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[580px]">
 
-                {/* Заглавие */}
-                <div className="text-center space-y-2">
-                    <div className="w-12 h-12 bg-blue-#1d4ed8 text-white rounded-xl mx-auto flex items-center justify-center shadow-lg shadow-blue-#1d4ed8">
-                        {isSignUp ? <UserPlus className="w-6 h-6" /> : <LogIn className="w-6 h-6" />}
+                {/* Лява част - Промо панел с градиент */}
+                <div className="md:col-span-5 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 p-8 text-white flex flex-col justify-between relative overflow-hidden">
+                    {/* Декоративни кръгове на фона */}
+                    <div className="absolute -top-12 -left-12 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                    <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-blue-400/20 rounded-full blur-2xl pointer-events-none" />
+
+                    {/* Лого */}
+                    <div className="flex items-center space-x-2 relative z-10">
+                        <div className="p-2 bg-white/10 backdrop-blur-md rounded-xl">
+                            <Sparkles className="w-6 h-6 text-white" />
+                        </div>
+                        <span className="text-xl font-black tracking-tight">MySocialNet</span>
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-900">
-                        {isSignUp ? 'Създай нов акаунт' : 'Добре дошъл отново'}
-                    </h2>
-                    <p className="text-sm text-gray-500">
-                        {isSignUp
-                            ? 'Въведи данните си, за да се присъединиш към социалната мрежа'
-                            : 'Въведи имейл и парола, за да влезеш'}
-                    </p>
+
+                    {/* Текст / Акценти */}
+                    <div className="my-8 relative z-10 space-y-4">
+                        <h2 className="text-2xl sm:text-3xl font-extrabold leading-tight">
+                            Свържи се с хората около теб.
+                        </h2>
+                        <p className="text-blue-100 text-xs sm:text-sm leading-relaxed">
+                            Споделяй моменти, разглеждай интересни публикации и се свързвай с приятели в реално време.
+                        </p>
+                    </div>
+
+                    {/* Подпис / Футър */}
+                    <div className="text-[11px] text-blue-200/80 relative z-10">
+                        © {new Date().getFullYear()} MySocialNet. Всички права запазени.
+                    </div>
                 </div>
 
-                {/* Съобщения за грешка / успех */}
-                {error && (
-                    <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl flex items-center space-x-2 text-sm">
-                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                        <span>{error}</span>
-                    </div>
-                )}
+                {/* Дясна част - Форма за Вход / Регистрация */}
+                <div className="md:col-span-7 p-8 sm:p-10 flex flex-col justify-center">
+                    <div className="max-w-sm w-full mx-auto space-y-6">
 
-                {message && (
-                    <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-xl flex items-center space-x-2 text-sm">
-                        <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                        <span>{message}</span>
-                    </div>
-                )}
-
-                {/* Форма */}
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {isSignUp && (
+                        {/* Заглавие */}
                         <div>
-                            <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
-                                Потребителско име
-                            </label>
-                            <div className="relative">
-                                <User className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                <input
-                                    type="text"
-                                    required
-                                    placeholder="ivan_godumanov"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-#1d4ed8 focus:bg-white transition"
-                                />
+                            <h3 className="text-2xl font-bold text-slate-900">
+                                {isSignUp ? "Създай профил" : "Добре дошъл отново"}
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1">
+                                {isSignUp
+                                    ? "Попълни данните си, за да станеш част от общността."
+                                    : "Въведи данните си за вход, за да продължиш."}
+                            </p>
+                        </div>
+
+                        {/* Известие за грешка */}
+                        {errorMessage && (
+                            <div className="p-3 bg-red-50 border border-red-100 rounded-2xl flex items-center space-x-2 text-red-600 text-xs">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                <span>{errorMessage}</span>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
-                            Имейл адрес
-                        </label>
-                        <div className="relative">
-                            <Mail className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                            <input
-                                type="email"
-                                required
-                                placeholder="example@mail.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-#1d4ed8 focus:bg-white transition"
-                            />
+                        {/* Известие за успех */}
+                        {successMessage && (
+                            <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center space-x-2 text-emerald-600 text-xs">
+                                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                                <span>{successMessage}</span>
+                            </div>
+                        )}
+
+                        {/* Форма */}
+                        <form onSubmit={handleAuth} className="space-y-4">
+
+                            {/* Потребителско име (само при Регистрация) */}
+                            {isSignUp && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        Потребителско име
+                                    </label>
+                                    <div className="relative flex items-center">
+                                        <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            required
+                                            value={username}
+                                            onChange={(e) => setUsername(e.target.value)}
+                                            placeholder="ivan_godumanov"
+                                            className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-600 pl-10 pr-4 py-2.5 rounded-xl outline-none transition"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Имейл */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Имейл адрес
+                                </label>
+                                <div className="relative flex items-center">
+                                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                                    <input
+                                        type="email"
+                                        required
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        placeholder="example@mail.com"
+                                        className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-600 pl-10 pr-4 py-2.5 rounded-xl outline-none transition"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Парола */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Парола
+                                </label>
+                                <div className="relative flex items-center">
+                                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                                    <input
+                                        type="password"
+                                        required
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                        className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-600 pl-10 pr-4 py-2.5 rounded-xl outline-none transition"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Бутон за изпращане */}
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3 rounded-xl shadow-md hover:shadow-lg transition duration-200 flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 mt-2"
+                            >
+                                <span>{loading ? "Зареждане..." : isSignUp ? "Регистрирай се" : "Вход"}</span>
+                                {!loading && <ArrowRight className="w-4 h-4" />}
+                            </button>
+                        </form>
+
+                        {/* Превключване между Вход / Регистрация */}
+                        <div className="pt-2 text-center text-xs text-slate-500">
+                            {isSignUp ? "Вече имаш профил?" : "Нямаш профил?"}{" "}
+                            <button
+                                onClick={() => {
+                                    setIsSignUp(!isSignUp);
+                                    setErrorMessage("");
+                                    setSuccessMessage("");
+                                }}
+                                className="font-bold text-blue-600 hover:underline cursor-pointer ml-1"
+                            >
+                                {isSignUp ? "Влез тук" : "Регистрирай се"}
+                            </button>
                         </div>
+
                     </div>
-
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
-                            Парола
-                        </label>
-                        <div className="relative">
-                            <Lock className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                            <input
-                                type="password"
-                                required
-                                minLength={6}
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-#1d4ed8 focus:bg-white transition"
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition shadow-lg shadow-blue-#1d4ed8 disabled:opacity-50"
-                    >
-                        {loading
-                            ? 'Зареждане...'
-                            : isSignUp ? 'Регистрирай се' : 'Влез в акаунта'}
-                    </button>
-                </form>
-
-                {/* Превключване Вход / Регистрация */}
-                <div className="text-center pt-2">
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setIsSignUp(!isSignUp);
-                            setError(null);
-                            setMessage(null);
-                        }}
-                        className="text-sm text-blue-#1d4ed8 hover:underline font-medium"
-                    >
-                        {isSignUp
-                            ? 'Вече имаш акаунт? Влез тук'
-                            : 'Нямаш акаунт? Регистрирай се'}
-                    </button>
                 </div>
 
             </div>
