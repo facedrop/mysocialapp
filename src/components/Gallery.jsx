@@ -1,156 +1,76 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { Image, Heart, MessageCircle, Folder, Plus, X } from "lucide-react";
-import CreatePost from "./CreatePost";
 
-export default function Gallery({ currentUser, onSelectPost }) {
-    const [images, setImages] = useState([]);
+export default function Gallery({ currentUser }) {
+    const [photos, setPhotos] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selectedAlbum, setSelectedAlbum] = useState("Всички");
-    const [showUploadModal, setShowUploadModal] = useState(false);
 
     useEffect(() => {
-        fetchGalleryImages();
-    }, []);
+        if (currentUser) {
+            fetchUserPhotos();
+        }
+    }, [currentUser]);
 
-    const fetchGalleryImages = async () => {
+    const fetchUserPhotos = async () => {
+        setLoading(true);
         try {
-            setLoading(true);
+            // Извличаме постовете на потребителя, които съдържат снимка (image_url)
             const { data, error } = await supabase
                 .from("posts")
-                .select(`
-          id,
-          image_url,
-          album_name,
-          created_at,
-          user_id,
-          profiles (username, avatar_url),
-          likes (id),
-          comments (id)
-        `)
+                .select("id, image_url, created_at, content")
+                .eq("user_id", currentUser.id)
                 .not("image_url", "is", null)
                 .order("created_at", { ascending: false });
 
-            if (error) throw error;
-            setImages(data || []);
+            if (!error && data) {
+                setPhotos(data);
+            }
         } catch (err) {
-            console.error("Грешка при зареждане на галерията:", err.message);
+            console.error("Грешка при зареждане на галерията:", err);
         } finally {
             setLoading(false);
         }
     };
 
-    const albums = [
-        "Всички",
-        ...Array.from(new Set(images.map((img) => img.album_name || "Общи"))),
-    ];
-
-    const filteredImages =
-        selectedAlbum === "Всички"
-            ? images
-            : images.filter((img) => (img.album_name || "Общи") === selectedAlbum);
-
     return (
-        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-xs space-y-4">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <div className="flex items-center space-x-2">
-                    <Image className="w-5 h-5 text-blue-600" />
-                    <h2 className="text-sm font-bold text-gray-800">Фото Галерия</h2>
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div>
+                    <h2 className="text-base font-bold text-gray-800">Моята Галерия</h2>
+                    <p className="text-xs text-gray-400">Всички качени снимки в профила ти</p>
                 </div>
-
-                <button
-                    onClick={() => setShowUploadModal(true)}
-                    className="flex items-center space-x-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs"
-                >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Добави снимка</span>
-                </button>
+                <span className="text-xs font-semibold bg-blue-50 text-blue-600 px-3 py-1 rounded-full">
+                    {photos.length} {photos.length === 1 ? "снимка" : "снимки"}
+                </span>
             </div>
 
-            {/* Album Filters */}
-            {albums.length > 1 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                    <Folder className="w-3.5 h-3.5 text-gray-400 shrink-0 mr-1" />
-                    {albums.map((alb) => (
-                        <button
-                            key={alb}
-                            onClick={() => setSelectedAlbum(alb)}
-                            className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition ${selectedAlbum === alb
-                                    ? "bg-blue-100 text-blue-700 border border-blue-200"
-                                    : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200/60"
-                                }`}
-                        >
-                            {alb}
-                        </button>
-                    ))}
-                </div>
-            )}
-
-            {/* Modal for Quick Upload */}
-            {showUploadModal && currentUser && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl p-4 max-w-md w-full relative shadow-xl space-y-3">
-                        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                            <h3 className="text-xs font-bold text-gray-800">
-                                Добави снимка в албум
-                            </h3>
-                            <button
-                                onClick={() => setShowUploadModal(false)}
-                                className="text-gray-400 hover:text-gray-600 p-1 rounded-full"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        <CreatePost
-                            currentUser={currentUser}
-                            defaultAlbum={selectedAlbum !== "Всички" ? selectedAlbum : "Общи"}
-                            onPostCreated={() => {
-                                setShowUploadModal(false);
-                                fetchGalleryImages();
-                            }}
-                        />
-                    </div>
-                </div>
-            )}
-
-            {/* Grid */}
             {loading ? (
-                <div className="text-center py-10 text-xs text-gray-400">
-                    Зареждане на снимките...
-                </div>
-            ) : filteredImages.length === 0 ? (
-                <div className="text-center py-10 text-xs text-gray-400">
-                    Няма намерени снимки в този албум.
+                <p className="text-xs text-gray-400 text-center py-8">Зареждане на снимки...</p>
+            ) : photos.length === 0 ? (
+                <div className="text-center py-12 space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <p className="text-xs font-medium text-gray-500">Все още нямаш качени снимки.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                    {filteredImages.map((img) => (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {photos.map((photo) => (
                         <div
-                            key={img.id}
-                            onClick={() => onSelectPost && onSelectPost(img.id)}
-                            className="group relative aspect-square bg-gray-100 rounded-xl overflow-hidden cursor-pointer border border-gray-100"
+                            key={photo.id}
+                            className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 group border border-gray-100 shadow-2xs"
                         >
                             <img
-                                src={img.image_url}
-                                alt=""
-                                className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                src={photo.image_url}
+                                alt={photo.content || "Галерия снимка"}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
-
-                            <div className="absolute top-1.5 left-1.5 bg-black/50 backdrop-blur-xs text-white text-[9px] px-2 py-0.5 rounded-full font-medium">
-                                {img.album_name || "Общи"}
-                            </div>
-
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center space-x-4 text-white">
-                                <div className="flex items-center space-x-1 text-xs font-bold">
-                                    <Heart className="w-4 h-4 fill-white" />
-                                    <span>{img.likes?.length || 0}</span>
-                                </div>
-                                <div className="flex items-center space-x-1 text-xs font-bold">
-                                    <MessageCircle className="w-4 h-4 fill-white" />
-                                    <span>{img.comments?.length || 0}</span>
-                                </div>
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                                <p className="text-[10px] text-white truncate font-medium">
+                                    {photo.content || new Date(photo.created_at).toLocaleDateString("bg-BG")}
+                                </p>
                             </div>
                         </div>
                     ))}

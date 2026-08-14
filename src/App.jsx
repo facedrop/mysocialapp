@@ -6,10 +6,13 @@ import Sidebar from "./components/Sidebar";
 import StoriesBar from "./components/StoriesBar";
 import CreatePost from "./components/CreatePost";
 import PostList from "./components/PostList";
-import FollowingList from "./components/FollowingList"; // Горният блок (Истински приятели)
+import FollowingList from "./components/FollowingList";
 import GroupList from "./components/GroupList";
+import Gallery from "./components/Gallery";
 import SettingsPage from "./components/SettingsPage";
 import ChatModal from "./components/ChatModal";
+import ReelsFeed from "./components/ReelsFeed";
+import CreateReelModal from "./components/CreateReelModal";
 import Auth from "./components/Auth";
 
 export default function App() {
@@ -20,8 +23,9 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshPosts, setRefreshPosts] = useState(0);
 
-  // Избран потребител за активен чат
   const [chatSelectedUser, setChatSelectedUser] = useState(null);
+  const [isReelModalOpen, setIsReelModalOpen] = useState(false);
+  const [refreshReels, setRefreshReels] = useState(0);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -87,6 +91,7 @@ export default function App() {
           />
         </div>
 
+        {/* Средна колона */}
         <div className="md:col-span-3 lg:col-span-6 space-y-6">
           {activeTab === "feed" && (
             <>
@@ -103,7 +108,29 @@ export default function App() {
             </>
           )}
 
+          {/* Нов таб за Reels */}
+          {activeTab === "reels" && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
+                <div>
+                  <h2 className="text-sm font-bold text-gray-800">Reels & Видеа</h2>
+                  <p className="text-[11px] text-gray-400">Вертикален видео фийд (TikTok style)</p>
+                </div>
+                <button
+                  onClick={() => setIsReelModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 transition-colors"
+                >
+                  + Качи Reel
+                </button>
+              </div>
+
+              <ReelsFeed key={refreshReels} currentUser={currentUser} />
+            </div>
+          )}
+
           {activeTab === "groups" && <GroupList currentUser={currentUser} />}
+
+          {activeTab === "gallery" && <Gallery currentUser={currentUser} />}
 
           {activeTab === "settings" && (
             <SettingsPage
@@ -116,7 +143,6 @@ export default function App() {
 
         {/* Дясна колона */}
         <div className="hidden lg:block lg:col-span-3 space-y-6">
-          {/* Оставяме само горния блок с приятелите */}
           <FollowingList
             currentUser={currentUser}
             onStartChat={(user) => setChatSelectedUser(user)}
@@ -124,7 +150,16 @@ export default function App() {
         </div>
       </main>
 
-      {/* Прозорец за Чат долу вдясно */}
+      {/* Модал за качване на Reel */}
+      {isReelModalOpen && (
+        <CreateReelModal
+          currentUser={currentUser}
+          onClose={() => setIsReelModalOpen(false)}
+          onReelCreated={() => setRefreshReels((prev) => prev + 1)}
+        />
+      )}
+
+      {/* Чат прозорец */}
       {chatSelectedUser && (
         <ChatModal
           currentUser={currentUser}
