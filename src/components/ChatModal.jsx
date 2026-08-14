@@ -1,60 +1,91 @@
-// src/components/ChatModal.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { X, Send } from "lucide-react";
 
-export default function ChatModal({ currentUser, chatUser, onClose }) {
+export default function ChatModal({ currentUser, selectedUser, onClose }) {
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState("");
+    const [users, setUsers] = useState([]);
+    const [activeChatUser, setActiveChatUser] = useState(selectedUser || null);
+    const messagesEndRef = useRef(null);
 
-    // Зареждане на съобщения и слушане за нови в реално време
     useEffect(() => {
-        if (!chatUser || !currentUser) return;
+        fetchUsers();
+    }, []);
 
-        const fetchMessages = async () => {
-            const { data, error } = await supabase
-                .from("messages")
-                .select("*")
-                .or(
-                    `and(sender_id.eq.${currentUser.id},receiver_id.eq.${chatUser.id}),and(sender_id.eq.${chatUser.id},receiver_id.eq.${currentUser.id})`
-                )
-                .order("created_at", { ascending: true });
+    useEffect(() => {
+        if (selectedUser) {
+            setActiveChatUser(selectedUser);
+        }
+    }, [selectedUser]);
 
-            if (!error) setMessages(data || []);
-        };
+    useEffect(() => {
+        if (activeChatUser) {
+            fetchMessages();
 
-        fetchMessages();
-
-        // Подписка за реално време (Realtime)
-        const channel = supabase
-            .channel(`chat_${chatUser.id}`)
-            .on(
-                "postgres_changes",
-                {
-                    event: "INSERT",
-                    schema: "public",
-                    table: "messages",
-                },
-                (payload) => {
-                    const msg = payload.new;
-                    if (
-                        (msg.sender_id === currentUser.id && msg.receiver_id === chatUser.id) ||
-                        (msg.sender_id === chatUser.id && msg.receiver_id === currentUser.id)
-                    ) {
-                        setMessages((prev) => [...prev, msg]);
+            const subscription = supabase
+                .channel(`chat_${activeChatUser.id}`)
+                .on(
+                    "postgres_changes",
+                    {
+                        event: "INSERT",
+                        schema: "public",
+                        table: "messages",
+                    },
+                    (payload) => {
+                        const msg = payload.new;
+                        if (
+                            (msg.sender_id === currentUser.id && msg.receiver_id === activeChatUser.id) ||
+                            (msg.sender_id === activeChatUser.id && msg.receiver_id === currentUser.id)
+                        ) {
+                            setMessages((prev) => [...prev, msg]);
+                        }
                     }
-                }
-            )
-            .subscribe();
+                )
+                .subscribe();
 
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [chatUser, currentUser]);
+            return () => {
+                supabase.removeChannel(subscription);
+            };
+        }
+    }, [activeChatUser]);
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages]);
+
+    const fetchUsers = async () => {
+        const { data } = await supabase
+            .from("profiles")
+            .select("*")
+            .neq("id", currentUser.id);
+
+        if (data) {
+            setUsers(data);
+            if (!activeChatUser && data.length > 0) {
+                setActiveChatUser(data[0]);
+            }
+        }
+    };
+
+    const fetchMessages = async () => {
+        if (!activeChatUser) return;
+
+        const { data, error } = await supabase
+            .from("messages")
+            .select("*")
+            .or(
+                `and(sender_id.eq.${currentUser.id},receiver_id.eq.${activeChatUser.id}),and(sender_id.eq.${activeChatUser.id},receiver_id.eq.${currentUser.id})`
+            )
+            .order("created_at", { ascending: true });
+
+        if (!error && data) {
+            setMessages(data);
+        }
+    };
 
     const handleSendMessage = async (e) => {
         e.preventDefault();
-        if (!newMessage.trim()) return;
+        if (!newMessage.trim() || !activeChatUser) return;
 
         const textToSend = newMessage.trim();
         setNewMessage("");
@@ -62,84 +93,86 @@ export default function ChatModal({ currentUser, chatUser, onClose }) {
         const { error } = await supabase.from("messages").insert([
             {
                 sender_id: currentUser.id,
-                receiver_id: chatUser.id,
+                receiver_id: activeChatUser.id,
                 content: textToSend,
             },
         ]);
 
         if (error) {
-            console.error("Грешка при изпращане:", error.message);
+            console.error("Грешка при изпращане на съобщение:", error);
         }
     };
 
-    if (!chatUser) return null;
+    const activeName =
+        activeChatUser?.full_name || activeChatUser?.username || "Потребител";
 
     return (
-        /* ВАЖНО: fixed bottom-0 right-4 z-50 фиксира прозореца долу вдясно */
-        <div className="fixed bottom-0 right-4 sm:right-10 w-80 sm:w-96 bg-white rounded-t-2xl shadow-2xl border border-gray-200 z-50 flex flex-col h-[450px] animate-in slide-in-from-bottom duration-200">
-
+        <div className="fixed bottom-0 right-4 z-50 w-80 sm:w-96 bg-white rounded-t-2xl shadow-2xl border border-gray-200 flex flex-col h-[420px] overflow-hidden">
             {/* Заглавна част */}
-            <div className="p-3 bg-blue-600 text-white rounded-t-2xl flex items-center justify-between shrink-0">
+            <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between shadow-xs">
                 <div className="flex items-center space-x-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs overflow-hidden shrink-0">
-                        {chatUser.avatar_url ? (
-                            <img src={chatUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs overflow-hidden shrink-0 border border-white/30">
+                        {activeChatUser?.avatar_url ? (
+                            <img
+                                src={activeChatUser.avatar_url}
+                                alt=""
+                                className="w-full h-full object-cover"
+                            />
                         ) : (
-                            <span>{(chatUser.username || chatUser.full_name || "U")[0].toUpperCase()}</span>
+                            activeName[0].toUpperCase()
                         )}
                     </div>
-                    <span className="font-bold text-xs truncate">
-                        {chatUser.username || chatUser.full_name || "Чат"}
-                    </span>
+                    <span className="font-semibold text-xs truncate">{activeName}</span>
                 </div>
 
                 <button
                     onClick={onClose}
-                    className="p-1 hover:bg-white/20 rounded-lg transition cursor-pointer"
+                    className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
                 >
-                    <X className="w-4 h-4 text-white" />
+                    ✕
                 </button>
             </div>
 
-            {/* Зона със съобщения */}
-            <div className="flex-1 p-3 overflow-y-auto space-y-2 bg-slate-50 text-xs">
-                {messages.map((m) => {
-                    const isMe = m.sender_id === currentUser.id;
+            {/* Съобщения */}
+            <div className="flex-1 p-3 overflow-y-auto space-y-2.5 bg-slate-50">
+                {messages.map((msg) => {
+                    const isMe = msg.sender_id === currentUser.id;
                     return (
                         <div
-                            key={m.id || m.created_at}
+                            key={msg.id || Math.random()}
                             className={`flex ${isMe ? "justify-end" : "justify-start"}`}
                         >
                             <div
-                                className={`max-w-[75%] px-3 py-2 rounded-2xl ${isMe
+                                className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs break-words shadow-2xs ${isMe
                                         ? "bg-blue-600 text-white rounded-br-xs"
-                                        : "bg-white text-gray-800 border border-gray-100 rounded-bl-xs shadow-2xs"
+                                        : "bg-white text-gray-800 rounded-bl-xs border border-gray-100"
                                     }`}
                             >
-                                {m.content}
+                                {msg.content}
                             </div>
                         </div>
                     );
                 })}
+                <div ref={messagesEndRef} />
             </div>
 
-            {/* Поле за писане */}
+            {/* Поле за въвеждане */}
             <form
                 onSubmit={handleSendMessage}
-                className="p-2 border-t border-gray-100 bg-white flex items-center space-x-2 shrink-0 rounded-b-2xl"
+                className="p-2.5 bg-white border-t border-gray-100 flex items-center gap-2"
             >
                 <input
                     type="text"
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     placeholder="Напиши съобщение..."
-                    className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5 text-xs focus:outline-none focus:border-blue-600"
+                    className="flex-1 text-xs px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
                 <button
                     type="submit"
-                    className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition cursor-pointer shrink-0"
+                    className="px-3.5 py-2 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 transition-colors shrink-0"
                 >
-                    <Send className="w-3.5 h-3.5" />
+                    Прати
                 </button>
             </form>
         </div>
